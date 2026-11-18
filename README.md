@@ -34,7 +34,8 @@ provider "azurerm" {
 }
 
 module "rwx_runner" {
-  source = "git::https://github.com/rwx-cloud/terraform-azurerm-runner.git?ref=7bb8286d0dbfc879935eee3a3ee8e983d818610b"
+  source  = "rwx-cloud/runner/azurerm"
+  version = "~> 1.0"
 
   rwx_self_hosted_runner_label       = "prod"
   rwx_self_hosted_runner_external_id = "8f4c1d92a7b3e5604fa8c2d19e0b7635"
@@ -51,9 +52,6 @@ and the runner's region. Apply with permission to create managed identities,
 custom roles, and role assignments. Then copy the `provisioning_client_id` output
 back into RWX.
 
-The module is not yet published in the Terraform Registry. Use the Git source
-above, pinned to an exact commit.
-
 Runners need outbound internet access through a public IP or a NAT Gateway.
 No inbound access is required; keep your network security groups blocking
 unsolicited traffic, including SSH.
@@ -69,7 +67,7 @@ builds need.
 ## Upgrading
 
 RWX occasionally releases features that need additional permissions. To upgrade,
-update the Git commit in `source`, run `terraform init -upgrade`, and review and
+raise the `version` constraint, run `terraform init -upgrade`, and review and
 apply the plan.
 
 ## Examples
