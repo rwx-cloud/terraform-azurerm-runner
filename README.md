@@ -1,65 +1,80 @@
-# RWX Azure self-hosted runner
+# terraform-azurerm-runner
 
-Terraform module for RWX Azure self-hosted runners. Until a Registry release is
-published, use this Git repository pinned to a reviewed full commit SHA:
-`git::https://github.com/rwx-cloud/terraform-azurerm-runner.git?ref=<commit-sha>`.
-Replace `<commit-sha>` with the actual reviewed commit. The intended Registry
-source is `rwx-cloud/runner/azurerm`; no Registry release is published yet.
+Grants [RWX](https://www.rwx.com) permission to provision self-hosted runners in
+your Azure subscription. Contact [RWX support](https://www.rwx.com/support) to
+enable support for self-hosted runners.
 
-## Setup
+The module creates a managed identity, a federated credential, and two custom
+roles with assignments. It does not create networks or VMs — RWX launches runners
+into the subnet you specify.
 
-1. Create an RWX Azure runner configuration with your tenant, subscription,
-   dedicated resource group, location, ordered zones, and subnet ARM ID. Copy its
-   label, external ID, and exact OIDC issuer.
-2. Apply this module as an administrator allowed to create managed identities,
-   custom roles, and role assignments. Register `Microsoft.Compute`,
-   `Microsoft.Network`, and `Microsoft.ManagedIdentity` beforehand. The caller's
-   AzureRM provider selects the subscription; disable automatic registration for
-   least-privileged CI identities.
-3. Copy the `provisioning_client_id` output back into RWX. Azure assigns this UUID;
-   it cannot be calculated from the managed identity name. It is not a secret.
-4. Select a supported SKU and zones available to your subscription. Initially
-   coordinate `eastus2` with RWX's image replication regions; do not assume every
-   subscription can run the same SKU in all three zones.
+- **Provisioning identity** — RWX uses this identity to manage runner VMs,
+  network interfaces, disks, and public IPs. It trusts only your runner's external
+  ID. Its provisioning role is scoped to the resource group you specify.
+- **Subnet role** — allows the provisioning identity to read and join only the
+  subnet you specify. It cannot change the subnet or its security rules.
 
-See [examples/basic](examples/basic/main.tf). This module does not create the
-network or VMs. The subnet must be in the runner subscription and region and have
-explicit outbound connectivity for DNS, HTTPS, RWX configuration, task servers,
-binaries, layers, and logs. RWX can attach a Standard public IPv4 address to a
-runner NIC; private runners instead need an outbound path such as a NAT Gateway.
-A public IP does not bypass subnet routes, firewalls, or network security groups.
-Keep network security groups denying unsolicited inbound traffic, including SSH
-and traffic from neighboring VMs. Runner operation does not require inbound
-access. This module grants public IP lifecycle permissions but does not allocate
-addresses, attach them to NICs, or open inbound ports; RWX manages runner resources.
+**The resource group must be dedicated to this RWX runner configuration.**
+The provisioning role can manage resources throughout that group, so do not put
+unrelated workloads there.
 
-## Security boundary
+## Usage
 
-The provisioner is `rwx-provisioning-<last 12 characters of external ID>` and trusts
-only `rwx:provisioning:<full external ID>` from the exact issuer, with audience
-`api://AzureADTokenExchange`. No client secret, tenant application, or runtime VM
-managed identity is created. Never attach the provisioning identity to a VM.
+Contact [RWX support](https://www.rwx.com/support) to enable support for
+self-hosted runners.
 
-**The resource group must contain only this runner configuration's resources.**
-Unlike GCP's IAM condition, Azure Compute RBAC does not restrict these grants to
-`rwx-` names. The custom role can create/read/delete VMs, NICs, disks, and public IPs
-throughout the resource group, including attaching public IPs to NICs, with
-operation polling permissions. It cannot change RBAC, network security groups,
-virtual networks, subnet configuration, or route tables. A separate role grants
-read/join on the one supplied subnet. Do not put unrelated workloads in the
-runner group. Upgrading this module expands the provisioning role's permissions;
-review and apply that role update before enabling public IP runners in RWX.
+Create a self-hosted Azure runner at [cloud.rwx.com](https://cloud.rwx.com), then
+apply this module with the values it shows you. Replace the example subscription,
+issuer, resource group, and subnet below with your own values:
 
-VM authentication uses Cloud's verification of a signed IMDS attested document,
-not a shared managed-identity access token. WAF header presence is not authentication.
-Boot diagnostics uses Azure-managed storage; no storage account is required.
+```hcl
+provider "azurerm" {
+  features {}
+  subscription_id = "<subscription-id>"
+}
 
-Image versions are immutable Community Gallery references, replicated to every
-selected runner region. Public availability does not override your subscription's
-Azure Policy restrictions. The Gen2 gallery definition is `TrustedLaunchSupported`,
-not `TrustedLaunch`: Mint captures Standard-security builders without VMGS, and
-builders and runners keep Secure Boot off for the unsigned rwxfs kernel module.
-Gallery publication is a separate RWX operation.
+module "rwx_runner" {
+  source = "git::https://github.com/rwx-cloud/terraform-azurerm-runner.git?ref=7bb8286d0dbfc879935eee3a3ee8e983d818610b"
+
+  rwx_self_hosted_runner_label       = "prod"
+  rwx_self_hosted_runner_external_id = "8f4c1d92a7b3e5604fa8c2d19e0b7635"
+  rwx_oidc_issuer                    = "https://issuer.example.com"
+  resource_group_name                = "rwx-runners"
+  location                           = "eastus2"
+  subnet_id                          = "/subscriptions/<subscription-id>/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/runners/subnets/runners"
+}
+```
+
+The module uses the subscription selected by your `azurerm` provider. The resource
+group and subnet must already exist, and the subnet must be in that subscription
+and the runner's region. Apply with permission to create managed identities,
+custom roles, and role assignments. Then copy the `provisioning_client_id` output
+back into RWX.
+
+The module is not yet published in the Terraform Registry. Use the Git source
+above, pinned to an exact commit.
+
+Runners need outbound internet access through a public IP or a NAT Gateway.
+No inbound access is required; keep your network security groups blocking
+unsolicited traffic, including SSH.
+
+### Granting your builds access to other Azure resources
+
+Use OIDC. Do not attach the provisioning identity to runner VMs or use it for
+builds. Add an OIDC token to an RWX vault with audience
+`api://AzureADTokenExchange`, then create a separate Azure identity that trusts
+the token's issuer and subject. Grant that identity only the permissions your
+builds need.
+
+## Upgrading
+
+RWX occasionally releases features that need additional permissions. To upgrade,
+update the Git commit in `source`, run `terraform init -upgrade`, and review and
+apply the plan.
+
+## Examples
+
+- [Basic](examples/basic) - A single runner in one subscription and region
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -108,15 +123,6 @@ Gallery publication is a separate RWX operation.
 | <a name="output_provisioning_identity_id"></a> [provisioning\_identity\_id](#output\_provisioning\_identity\_id) | ARM ID of the provisioning identity. Do not attach this identity to runner VMs. |
 <!-- END_TF_DOCS -->
 
-## Verification
+## License
 
-Run `rwx run .rwx/ci.yml --wait` for recursive formatting,
-`terraform init -backend=false`, and `terraform validate` for this module and the
-basic example. Do not replace real Azure permission tests with
-mock plans: Cloud's live VCR recording must prove federation, private and public-IP
-VM creation, public IP attachment, polling, idempotent cleanup of VM/NIC/disk/public
-IP, and denied access outside the runner resource group and assigned subnet.
-Replay only proves the recorded API contract, not a fresh Azure deployment.
-Regenerate the schema tables
-with `terraform-docs markdown table --output-file README.md --output-mode inject .`
-from this module using terraform-docs 0.20.0 in an RWX sandbox.
+MIT. See [LICENSE](LICENSE).
