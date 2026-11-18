@@ -3,7 +3,7 @@
 resource "azurerm_role_definition" "provisioning" {
   name        = "rwx-provisioning-${var.name_suffix}"
   scope       = var.resource_group_id
-  description = "Manage RWX runner VMs, NICs, and disks in a dedicated resource group."
+  description = "Manage RWX runner VMs, NICs, disks, and public IPs in a dedicated resource group."
   permissions {
     actions = [
       "Microsoft.Resources/subscriptions/resourceGroups/read",
@@ -20,6 +20,10 @@ resource "azurerm_role_definition" "provisioning" {
       "Microsoft.Network/networkInterfaces/write",
       "Microsoft.Network/networkInterfaces/delete",
       "Microsoft.Network/networkInterfaces/join/action",
+      "Microsoft.Network/publicIPAddresses/read",
+      "Microsoft.Network/publicIPAddresses/write",
+      "Microsoft.Network/publicIPAddresses/delete",
+      "Microsoft.Network/publicIPAddresses/join/action",
       "Microsoft.Network/locations/operations/read",
       "Microsoft.Network/locations/operationResults/read",
     ]

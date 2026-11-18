@@ -26,7 +26,7 @@ variable "rwx_oidc_issuer" {
 }
 
 variable "resource_group_name" {
-  description = "Existing dedicated resource group containing only this configuration's runner VMs, NICs, disks, and provisioning identity."
+  description = "Existing dedicated resource group containing only this configuration's runner VMs, NICs, disks, public IPs, and provisioning identity."
   type        = string
 }
 
